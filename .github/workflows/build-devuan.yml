@@ -24,28 +24,21 @@ jobs:
 
       - name: Build Devuan ARM64 rootfs
         run: |
-          sudo debootstrap --verbose --arch=arm64 --variant=minbase --include=sysv-rc,wget,curl,procps,dropbear,nano,iproute2,devuan-keyring --foreign --no-check-gpg stable /root/devuan_arm64 http://deb.devuan.org/merged
+          sudo debootstrap --verbose --arch=arm64 --variant=minbase \
+            --include=sysv-rc,wget,curl,procps,dropbear,nano,iproute2,devuan-keyring \
+            --foreign --no-check-gpg stable /root/devuan_arm64 http://deb.devuan.org/merged
 
-          sudo bash -c "cat > /root/devuan_arm64/etc/resolv.conf <<EOF
-nameserver 8.8.8.8
-nameserver 8.8.4.4
-EOF"
-
-          sudo bash -c "cat > /root/devuan_arm64/etc/apt/sources.list <<EOF
-deb http://mirrors.tuna.tsinghua.edu.cn/devuan/merged stable main
-EOF"
+          echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" | sudo tee /root/devuan_arm64/etc/resolv.conf
+          echo "deb http://mirrors.tuna.tsinghua.edu.cn/devuan/merged stable main" | sudo tee /root/devuan_arm64/etc/apt/sources.list
 
       - name: Build Devuan ARMHF rootfs
         run: |
-          sudo debootstrap --verbose --arch=armhf --variant=minbase --include=sysv-rc,wget,curl,procps,dropbear,nano,iproute2,devuan-keyring --foreign --no-check-gpg stable /root/devuan_armhf http://deb.devuan.org/merged
+          sudo debootstrap --verbose --arch=armhf --variant=minbase \
+            --include=sysv-rc,wget,curl,procps,dropbear,nano,iproute2,devuan-keyring \
+            --foreign --no-check-gpg stable /root/devuan_armhf http://deb.devuan.org/merged
 
-          sudo bash -c "cat > /root/devuan_armhf/etc/resolv.conf <<EOF
-nameserver 8.8.8.8
-nameserver 8.8.4.4
-EOF"
-          sudo bash -c "cat > /root/devuan_armhf/etc/apt/sources.list <<EOF
-deb http://mirrors.tuna.tsinghua.edu.cn/devuan/merged stable main
-EOF"
+          echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" | sudo tee /root/devuan_armhf/etc/resolv.conf
+          echo "deb http://mirrors.tuna.tsinghua.edu.cn/devuan/merged stable main" | sudo tee /root/devuan_armhf/etc/apt/sources.list
 
       - name: Compress rootfs archives
         run: |
