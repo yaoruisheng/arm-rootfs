@@ -1,0 +1,67 @@
+name: Build Devuan Rootfs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap tar curl wget
+
+      - name: Prepare directories
+        run: |
+          sudo mkdir -p /root/devuan_arm64 /root/devuan_armhf
+
+      - name: Build Devuan ARM64 rootfs
+        run: |
+          sudo debootstrap --verbose --arch=arm64 --variant=minbase --include=sysv-rc,wget,curl,procps,dropbear,nano,iproute2,devuan-keyring --foreign --no-check-gpg stable /root/devuan_arm64 http://deb.devuan.org/merged
+
+          sudo bash -c "cat > /root/devuan_arm64/etc/resolv.conf <<'EOF'
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+EOF"
+
+          sudo bash -c "cat > /root/devuan_arm64/etc/apt/sources.list <<'EOF'
+deb http://mirrors.tuna.tsinghua.edu.cn/devuan/merged stable main
+EOF"
+
+      - name: Build Devuan ARMHF rootfs
+        run: |
+          sudo debootstrap --verbose --arch=armhf --variant=minbase --include=sysv-rc,wget,curl,procps,dropbear,nano,iproute2,devuan-keyring --foreign --no-check-gpg stable /root/devuan_armhf http://deb.devuan.org/merged
+
+          sudo bash -c "cat > /root/devuan_armhf/etc/resolv.conf <<'EOF'
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+EOF"
+          sudo bash -c "cat > /root/devuan_armhf/etc/apt/sources.list <<'EOF'
+deb http://mirrors.tuna.tsinghua.edu.cn/devuan/merged stable main
+EOF"
+
+      - name: Compress rootfs archives
+        run: |
+          cd /root/devuan_arm64 && sudo tar czlpf /root/devuan.arm64.tar.gz .
+          cd /root/devuan_armhf && sudo tar czlpf /root/devuan.armhf.tar.gz .
+
+      - name: Move archives to workspace
+        run: sudo mv /root/devuan.arm64.tar.gz /root/devuan.armhf.tar.gz $GITHUB_WORKSPACE/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "manual-build-${{ github.run_number }}"
+          name: "Devuan Rootfs Manual Build #${{ github.run_number }}"
+          files: |
+            devuan.arm64.tar.gz
+            devuan.armhf.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
