@@ -28,6 +28,7 @@ jobs:
             --include=sysv-rc,wget,curl,procps,dropbear,nano,iproute2,devuan-keyring \
             --foreign --no-check-gpg stable $GITHUB_WORKSPACE/devuan_arm64 http://deb.devuan.org/merged
 
+          # 配置 DNS 和 apt 源
           echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" | sudo tee $GITHUB_WORKSPACE/devuan_arm64/etc/resolv.conf
           echo "deb http://mirrors.tuna.tsinghua.edu.cn/devuan/merged stable main" | sudo tee $GITHUB_WORKSPACE/devuan_arm64/etc/apt/sources.list
 
@@ -42,8 +43,8 @@ jobs:
 
       - name: Compress rootfs archives
         run: |
-          tar czlpf $GITHUB_WORKSPACE/devuan.arm64.tar.gz -C $GITHUB_WORKSPACE/devuan_arm64 .
-          tar czlpf $GITHUB_WORKSPACE/devuan.armhf.tar.gz -C $GITHUB_WORKSPACE/devuan_armhf .
+          sudo tar czlpf $GITHUB_WORKSPACE/devuan.arm64.tar.gz -C $GITHUB_WORKSPACE/devuan_arm64 .
+          sudo tar czlpf $GITHUB_WORKSPACE/devuan.armhf.tar.gz -C $GITHUB_WORKSPACE/devuan_armhf .
 
       - name: Show archive sizes
         run: |
