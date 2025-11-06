@@ -20,33 +20,30 @@ jobs:
 
       - name: Prepare directories
         run: |
-          sudo mkdir -p /root/devuan_arm64 /root/devuan_armhf
+          mkdir -p $GITHUB_WORKSPACE/devuan_arm64 $GITHUB_WORKSPACE/devuan_armhf
 
       - name: Build Devuan ARM64 rootfs
         run: |
           sudo debootstrap --verbose --arch=arm64 --variant=minbase \
             --include=sysv-rc,wget,curl,procps,dropbear,nano,iproute2,devuan-keyring \
-            --foreign --no-check-gpg stable /root/devuan_arm64 http://deb.devuan.org/merged
+            --foreign --no-check-gpg stable $GITHUB_WORKSPACE/devuan_arm64 http://deb.devuan.org/merged
 
-          echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" | sudo tee /root/devuan_arm64/etc/resolv.conf
-          echo "deb http://mirrors.tuna.tsinghua.edu.cn/devuan/merged stable main" | sudo tee /root/devuan_arm64/etc/apt/sources.list
+          echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" > $GITHUB_WORKSPACE/devuan_arm64/etc/resolv.conf
+          echo "deb http://mirrors.tuna.tsinghua.edu.cn/devuan/merged stable main" > $GITHUB_WORKSPACE/devuan_arm64/etc/apt/sources.list
 
       - name: Build Devuan ARMHF rootfs
         run: |
           sudo debootstrap --verbose --arch=armhf --variant=minbase \
             --include=sysv-rc,wget,curl,procps,dropbear,nano,iproute2,devuan-keyring \
-            --foreign --no-check-gpg stable /root/devuan_armhf http://deb.devuan.org/merged
+            --foreign --no-check-gpg stable $GITHUB_WORKSPACE/devuan_armhf http://deb.devuan.org/merged
 
-          echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" | sudo tee /root/devuan_armhf/etc/resolv.conf
-          echo "deb http://mirrors.tuna.tsinghua.edu.cn/devuan/merged stable main" | sudo tee /root/devuan_armhf/etc/apt/sources.list
+          echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" > $GITHUB_WORKSPACE/devuan_armhf/etc/resolv.conf
+          echo "deb http://mirrors.tuna.tsinghua.edu.cn/devuan/merged stable main" > $GITHUB_WORKSPACE/devuan_armhf/etc/apt/sources.list
 
       - name: Compress rootfs archives
         run: |
-          cd /root/devuan_arm64 && sudo tar czlpf /root/devuan.arm64.tar.gz .
-          cd /root/devuan_armhf && sudo tar czlpf /root/devuan.armhf.tar.gz .
-
-      - name: Move archives to workspace
-        run: sudo mv /root/devuan.arm64.tar.gz /root/devuan.armhf.tar.gz $GITHUB_WORKSPACE/
+          tar czlpf $GITHUB_WORKSPACE/devuan.arm64.tar.gz -C $GITHUB_WORKSPACE/devuan_arm64 .
+          tar czlpf $GITHUB_WORKSPACE/devuan.armhf.tar.gz -C $GITHUB_WORKSPACE/devuan_armhf .
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
