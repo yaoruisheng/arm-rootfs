@@ -1,0 +1,150 @@
+name: Build Debian ARM Root Filesystems
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (debootstrap and QEMU)
+        run: |
+          # debootstrap, tar, wget are required for the first stage
+          sudo apt-get update
+          # qemu-user-static is CRITICAL for running the second stage of a foreign architecture
+          sudo apt-get install -y debootstrap tar curl wget qemu-user-static
+
+      - name: Prepare directories
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/debian_arm64 $GITHUB_WORKSPACE/debian_armhf $GITHUB_WORKSPACE/debian_armel
+
+      # --- ARM64 RootFS Build ---
+      - name: Build Debian ARM64 rootfs (Stage 1)
+        run: |
+          ROOTFS_DIR=$GITHUB_WORKSPACE/debian_arm64
+          # Stage 1: Download and extract packages (run on x86_64 host)
+          sudo debootstrap --verbose --arch=arm64 --variant=minbase \
+            --include=sysvinit-core,sysv-rc,libpam-elogind,dropbear,nano,wget,curl,procps,iproute2,dbus-x11 \
+            --foreign stable $ROOTFS_DIR https://deb.debian.org/debian
+          
+          # Apply custom configurations inside the rootfs
+          echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" | sudo tee $ROOTFS_DIR/etc/resolv.conf
+          echo "deb http://mirrors.huaweicloud.com/debian stable main" | sudo tee $ROOTFS_DIR/etc/apt/sources.list
+          
+          # Pinning to disable systemd
+          echo -e "Package: systemd*\nPin: release o=Debian\nPin-Priority: -1\n\nPackage: systemd-sysv\nPin: release o=Debian\nPin-Priority: -1\n\nPackage: systemd\nPin: origin \"\"\nPin-Priority: -1\n\nPackage: cgmanager\nPin: origin \"\"\nPin-Priority: -1" \
+            | sudo tee $ROOTFS_DIR/etc/apt/preferences.d/local-pin-init
+          
+          # Patch debootstrap script to ignore install issues during second stage in chroot
+          sudo sed -i '/Cannot install into target/c\:' $ROOTFS_DIR/debootstrap/debootstrap
+
+      - name: Run Debian ARM64 rootfs (Stage 2) via QEMU
+        run: |
+          ROOTFS_DIR=$GITHUB_WORKSPACE/debian_arm64
+          # CRITICAL: Copy QEMU static binary into the rootfs for emulation
+          sudo cp /usr/bin/qemu-aarch64-static $ROOTFS_DIR/usr/bin/
+          
+          # Stage 2: Complete package configuration inside the emulated environment
+          # Use binfmt_misc to allow chroot execution of ARM binaries
+          sudo chroot $ROOTFS_DIR /debootstrap/debootstrap --second-stage
+          
+      - name: Cleanup QEMU binary (ARM64)
+        run: |
+          ROOTFS_DIR=$GITHUB_WORKSPACE/debian_arm64
+          # Remove the static QEMU binary as it is no longer needed after second-stage
+          sudo rm $ROOTFS_DIR/usr/bin/qemu-aarch64-static
+
+      # --- ARMHF RootFS Build ---
+      - name: Build Debian ARMHF rootfs (Stage 1)
+        run: |
+          ROOTFS_DIR=$GITHUB_WORKSPACE/debian_armhf
+          # Stage 1: Download and extract packages (run on x86_64 host)
+          sudo debootstrap --verbose --arch=armhf --variant=minbase \
+            --include=sysvinit-core,sysv-rc,libpam-elogind,dropbear,nano,wget,curl,procps,iproute2,dbus-x11 \
+            --foreign stable $ROOTFS_DIR https://deb.debian.org/debian
+          
+          # Apply custom configurations inside the rootfs
+          echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" | sudo tee $ROOTFS_DIR/etc/resolv.conf
+          echo "deb http://mirrors.huaweicloud.com/debian stable main" | sudo tee $ROOTFS_DIR/etc/apt/sources.list
+          
+          # Pinning to disable systemd
+          echo -e "Package: systemd*\nPin: release o=Debian\nPin-Priority: -1\n\nPackage: systemd-sysv\nPin: release o=Debian\nPin-Priority: -1\n\nPackage: systemd\nPin: origin \"\"\nPin-Priority: -1\n\nPackage: cgmanager\nPin: origin \"\"\nPin-Priority: -1" \
+            | sudo tee $ROOTFS_DIR/etc/apt/preferences.d/local-pin-init
+          
+          # Patch debootstrap script to ignore install issues during second stage in chroot
+          sudo sed -i '/Cannot install into target/c\:' $ROOTFS_DIR/debootstrap/debootstrap
+
+      - name: Run Debian ARMHF rootfs (Stage 2) via QEMU
+        run: |
+          ROOTFS_DIR=$GITHUB_WORKSPACE/debian_armhf
+          # CRITICAL: Copy QEMU static binary into the rootfs for emulation
+          sudo cp /usr/bin/qemu-arm-static $ROOTFS_DIR/usr/bin/
+          
+          # Stage 2: Complete package configuration inside the emulated environment
+          sudo chroot $ROOTFS_DIR /debootstrap/debootstrap --second-stage
+
+      - name: Cleanup QEMU binary (ARMHF)
+        run: |
+          ROOTFS_DIR=$GITHUB_WORKSPACE/debian_armhf
+          # Remove the static QEMU binary as it is no longer needed after second-stage
+          sudo rm $ROOTFS_DIR/usr/bin/qemu-arm-static
+          
+      # --- ARMEL RootFS Build ---
+      - name: Build Debian ARMEL rootfs (Stage 1)
+        run: |
+          ROOTFS_DIR=$GITHUB_WORKSPACE/debian_armel
+          # Stage 1: Download and extract packages, specifying armel architecture
+          sudo debootstrap --verbose --arch=armel --variant=minbase \
+            --include=sysvinit-core,sysv-rc,libpam-elogind,dropbear,nano,wget,curl,procps,iproute2,dbus-x11 \
+            --foreign stable $ROOTFS_DIR https://deb.debian.org/debian
+          
+          # Apply custom configurations inside the rootfs
+          echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" | sudo tee $ROOTFS_DIR/etc/resolv.conf
+          echo "deb http://mirrors.huaweicloud.com/debian stable main" | sudo tee $ROOTFS_DIR/etc/apt/sources.list
+          
+          # Pinning to disable systemd
+          echo -e "Package: systemd*\nPin: release o=Debian\nPin-Priority: -1\n\nPackage: systemd-sysv\nPin: release o=Debian\nPin-Priority: -1\n\nPackage: systemd\nPin: origin \"\"\nPin-Priority: -1\n\nPackage: cgmanager\nPin: origin \"\"\nPin-Priority: -1" \
+            | sudo tee $ROOTFS_DIR/etc/apt/preferences.d/local-pin-init
+          
+          # Patch debootstrap script to ignore install issues during second stage in chroot
+          sudo sed -i '/Cannot install into target/c\:' $ROOTFS_DIR/debootstrap/debootstrap
+
+      - name: Run Debian ARMEL rootfs (Stage 2) via QEMU
+        run: |
+          ROOTFS_DIR=$GITHUB_WORKSPACE/debian_armel
+          # CRITICAL: Copy QEMU static binary into the rootfs for emulation (qemu-arm-static handles armel)
+          sudo cp /usr/bin/qemu-arm-static $ROOTFS_DIR/usr/bin/
+          
+          # Stage 2: Complete package configuration inside the emulated environment
+          sudo chroot $ROOTFS_DIR /debootstrap/debootstrap --second-stage
+
+      - name: Cleanup QEMU binary (ARMEL)
+        run: |
+          ROOTFS_DIR=$GITHUB_WORKSPACE/debian_armel
+          # Remove the static QEMU binary as it is no longer needed after second-stage
+          sudo rm $ROOTFS_DIR/usr/bin/qemu-arm-static
+
+      - name: Create tarball archives
+        run: |
+          # Create compressed archives of the final root filesystems
+          sudo tar -czf debian-arm64-rootfs.tar.gz -C $GITHUB_WORKSPACE/debian_arm64 .
+          sudo tar -czf debian-armhf-rootfs.tar.gz -C $GITHUB_WORKSPACE/debian_armhf .
+          sudo tar -czf debian-armel-rootfs.tar.gz -C $GITHUB_WORKSPACE/debian_armel .
+
+      - name: Upload rootfs artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-rootfs-archives
+          path: |
+            debian-arm64-rootfs.tar.gz
+            debian-armhf-rootfs.tar.gz
+            debian-armel-rootfs.tar.gz
