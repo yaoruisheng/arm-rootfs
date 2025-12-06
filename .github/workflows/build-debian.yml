@@ -104,6 +104,29 @@ jobs:
             locale-gen
             update-locale LANG=en_US.UTF-8
           '
+
+          # ------------------------------------------------------------------
+          # 5. 配置 Chrony NTP 服务器 (新增/修改)
+          # ------------------------------------------------------------------
+          
+          # 5a. 注释掉所有默认的 NTP pool 和 server
+          # 🎯 采用最通用的方案：匹配行首（含空格/Tab）的 "pool" 或 "server" 指令。
+          # 匹配并注释掉所有以 "pool" 开头且前面可有空格的行
+          sudo sed -i '/^[[:space:]]*pool/s/^/#/' "$ROOTFS_DIR/etc/chrony/chrony.conf"
+          # 匹配并注释掉所有以 "server" 开头且前面可有空格的行
+          sudo sed -i '/^[[:space:]]*server/s/^/#/' "$ROOTFS_DIR/etc/chrony/chrony.conf"
+
+          # 5b. 创建 tencent.conf 并写入配置
+          # 新增的腾讯 NTP 服务器配置
+          sudo chroot "$ROOTFS_DIR" /bin/bash -c '
+            mkdir -p /etc/chrony/conf.d
+            echo "server ntp.tencent.com iburst" > /etc/chrony/conf.d/tencent.conf
+            echo "server ntp1.tencent.com iburst" >> /etc/chrony/conf.d/tencent.conf
+            echo "server ntp2.tencent.com iburst" >> /etc/chrony/conf.d/tencent.conf
+            echo "server ntp3.tencent.com iburst" >> /etc/chrony/conf.d/tencent.conf
+            echo "server ntp4.tencent.com iburst" >> /etc/chrony/conf.d/tencent.conf
+            echo "server ntp5.tencent.com iburst" >> /etc/chrony/conf.d/tencent.conf
+          '
           
           echo "--- Custom configurations finished ---"
           # ------------------------------------------------------------------
