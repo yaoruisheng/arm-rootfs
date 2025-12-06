@@ -11,11 +11,11 @@ jobs:
   build_rootfs:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 需要写入权限才能上传 Artifact
+      contents: write
     
     # 核心：定义并行矩阵
     strategy:
-      fail-fast: false # 确保一个架构失败不会中断其他架构的构建
+      fail-fast: false
       matrix:
         include:
           - arch: arm64
@@ -41,7 +41,6 @@ jobs:
           mkdir -p "$ROOTFS_DIR"
 
           # Stage 1: 下载和提取包
-          # --include 包含基础工具和 sysvinit
           sudo debootstrap --verbose --arch=${{ matrix.arch }} --variant=minbase \
             --include=sysvinit-core,sysv-rc,libpam-elogind,dropbear,nano,wget,curl,procps,iproute2,dbus-x11,chrony \
             --foreign \
@@ -50,24 +49,12 @@ jobs:
           # DNS 配置
           echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" | sudo tee "$ROOTFS_DIR/etc/resolv.conf"
 
-          # Sources.list (使用华为云镜像，确保包含 non-free 固件)
+          # Sources.list
           echo "deb http://mirrors.huaweicloud.com/debian stable main contrib non-free non-free-firmware" \
             | sudo tee "$ROOTFS_DIR/etc/apt/sources.list"
 
-          # 禁用 systemd 系列包 (APT Pinning)
-          cat <<EOF | sudo tee "$ROOTFS_DIR/etc/apt/preferences.d/00-nosystemd"
-Package: systemd*
-Pin: version *
-Pin-Priority: -1
-
-Package: libsystemd*
-Pin: version *
-Pin-Priority: -1
-
-Package: udev
-Pin: version *
-Pin-Priority: -1
-EOF
+          # 禁用 systemd 系列包 (使用 echo -e 模式)
+          echo -e "Package: systemd*\nPin: version *\nPin-Priority: -1\n\nPackage: libsystemd*\nPin: version *\nPin-Priority: -1\n\nPackage: udev\nPin: version *\nPin-Priority: -1" | sudo tee "$ROOTFS_DIR/etc/apt/preferences.d/00-nosystemd"
 
           # 修复 debootstrap 的小 bug
           sudo sed -i '/Cannot install into target/c\:' "$ROOTFS_DIR/debootstrap/debootstrap"
@@ -147,20 +134,18 @@ EOF
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: build_rootfs # 依赖于矩阵 Job 完成
+    needs: build_rootfs
     permissions:
-      contents: write # 必须有权限才能创建 Release
+      contents: write
 
     steps:
       - name: 1. Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          # 修复后的下载逻辑：不写 name，下载 build_rootfs 产生的所有 Artifacts
           path: ./release_artifacts
 
       - name: 2. Flatten artifact directories
         run: |
-          # 将所有 .tar.gz 文件移动到根目录，解决 actions/download-artifact@v4 产生的子目录问题
           find ./release_artifacts -name "*.tar.gz" -exec mv {} ./release_artifacts/ \;
           find ./release_artifacts -type d -empty -delete
           ls -lh ./release_artifacts
