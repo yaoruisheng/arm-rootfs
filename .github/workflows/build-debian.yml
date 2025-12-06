@@ -1,6 +1,7 @@
 name: Build Debian ARM Root Filesystems (Matrix Parallel)
 
 on:
+  # 手动触发工作流
   workflow_dispatch:
 
 jobs:
@@ -10,10 +11,11 @@ jobs:
   build_rootfs:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # 需要写入权限才能上传 Artifact
     
+    # 核心：定义并行矩阵
     strategy:
-      fail-fast: false
+      fail-fast: false # 确保一个架构失败不会中断其他架构的构建
       matrix:
         include:
           - arch: arm64
@@ -39,19 +41,20 @@ jobs:
           mkdir -p "$ROOTFS_DIR"
 
           # Stage 1: 下载和提取包
+          # --include 包含基础工具和 sysvinit
           sudo debootstrap --verbose --arch=${{ matrix.arch }} --variant=minbase \
             --include=sysvinit-core,sysv-rc,libpam-elogind,dropbear,nano,wget,curl,procps,iproute2,dbus-x11,chrony \
             --foreign \
             stable "$ROOTFS_DIR" http://deb.debian.org/debian
 
-          # DNS
+          # DNS 配置
           echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" | sudo tee "$ROOTFS_DIR/etc/resolv.conf"
 
-          # Sources.list
+          # Sources.list (使用华为云镜像，确保包含 non-free 固件)
           echo "deb http://mirrors.huaweicloud.com/debian stable main contrib non-free non-free-firmware" \
             | sudo tee "$ROOTFS_DIR/etc/apt/sources.list"
 
-          # 禁用 systemd 系列包
+          # 禁用 systemd 系列包 (APT Pinning)
           cat <<EOF | sudo tee "$ROOTFS_DIR/etc/apt/preferences.d/00-nosystemd"
 Package: systemd*
 Pin: version *
@@ -73,9 +76,10 @@ EOF
         env:
           ROOTFS_DIR: ${{ github.workspace }}/debian_${{ matrix.arch }}
         run: |
+          # 复制 QEMU 二进制文件到目标系统
           sudo cp /usr/bin/${{ matrix.qemu_binary }} "$ROOTFS_DIR/usr/bin/"
 
-          # 挂载必需的虚拟文件系统
+          # 挂载必需的虚拟文件系统 (chroot 前)
           sudo mount -t proc /proc "$ROOTFS_DIR/proc"
           sudo mount --rbind /sys "$ROOTFS_DIR/sys"
           sudo mount --rbind /dev "$ROOTFS_DIR/dev"
@@ -84,7 +88,7 @@ EOF
           sudo chroot "$ROOTFS_DIR" /debootstrap/debootstrap --second-stage
           
           # ------------------------------------------------------------------
-          # 🌟 新增：系统配置
+          # 🌟 自定义系统配置
           # ------------------------------------------------------------------
           echo "--- Running custom configurations inside chroot ---"
           
@@ -101,7 +105,6 @@ EOF
           '
           
           # 3. 修改 _apt 和 _chrony 用户的组设置
-          # 注意：-g 设置主组，-G 设置辅助组 (覆盖现有辅助组)
           sudo chroot "$ROOTFS_DIR" sh -c '
             usermod -G nogroup -g aid_inet _apt
             usermod -G _chrony -g aid_inet _chrony
@@ -110,7 +113,7 @@ EOF
           echo "--- Custom configurations finished ---"
           # ------------------------------------------------------------------
 
-          # 卸载虚拟文件系统
+          # 卸载虚拟文件系统 (chroot 后)
           sudo umount -lf "$ROOTFS_DIR/proc" || true
           sudo umount -lf "$ROOTFS_DIR/sys" || true
           sudo umount -lf "$ROOTFS_DIR/dev" || true
@@ -132,28 +135,32 @@ EOF
       - name: 6. Upload RootFS Artifact
         uses: actions/upload-artifact@v4
         with:
+          # 每个架构上传一个独立的 Artifact
           name: debian-rootfs-${{ matrix.arch }}
           path: ${{ steps.tar.outputs.TARBALL_NAME }}
 
+  ---
+
   # ====================================================================
-  # JOB 2: 创建 Release（收集所有 Artifact）
+  # JOB 2: 创建 Release（收集所有 Artifacts）
   # ====================================================================
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: build_rootfs
+    needs: build_rootfs # 依赖于矩阵 Job 完成
     permissions:
-      contents: write
+      contents: write # 必须有权限才能创建 Release
 
     steps:
       - name: 1. Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          # 不写 name，下载 build_rootfs Job 产生的所有 Artifacts
+          # 修复后的下载逻辑：不写 name，下载 build_rootfs 产生的所有 Artifacts
           path: ./release_artifacts
 
       - name: 2. Flatten artifact directories
         run: |
+          # 将所有 .tar.gz 文件移动到根目录，解决 actions/download-artifact@v4 产生的子目录问题
           find ./release_artifacts -name "*.tar.gz" -exec mv {} ./release_artifacts/ \;
           find ./release_artifacts -type d -empty -delete
           ls -lh ./release_artifacts
@@ -174,15 +181,14 @@ EOF
 
             包含以下架构的最小化 RootFS：
 
-            - ARM64（aarch64）
-            - ARMHF（armv7 硬浮点）
-            - ARMEL（armv5/armv6 软浮点）
+            - **ARM64**（aarch64）
+            - **ARMHF**（armv7 硬浮点）
+            - **ARMEL**（armv5/armv6 软浮点）
 
             **系统配置要点:**
-            - **Root 初始密码：debian888** 🚨
+            - **Root 初始密码：debian888** 🚨 (请在首次登录后立即修改!)
             - 默认 sysvinit
-            - 完全禁用 systemd
+            - 完全禁用 systemd (通过 APT Pinning)
             - minbase 精简构建
-            - qemu-user-static 支持跨架构构建
             - **自定义组配置**：添加了 GIDs 3001-3005 的系统组，并调整了 `_apt` 和 `_chrony` 用户的组。
           files: ./release_artifacts/*.tar.gz
