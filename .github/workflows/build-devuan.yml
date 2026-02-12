@@ -28,14 +28,19 @@ jobs:
         env:
           ROOTFS_DIR: ${{ github.workspace }}/devuan_${{ matrix.arch }}
         run: |
+          # 1. 准备 Keyring
           mkdir -p keyring_tmp
           cd keyring_tmp
           wget -q http://deb.devuan.org/merged/pool/DEVUAN/main/d/devuan-keyring/devuan-keyring_2026.01.13_all.deb
-          ar x devuan-keyring_2026.01.13_all.deb
-          tar -xf data.tar.xz
-          KEYRING_PATH="$(pwd)/usr/share/keyrings/devuan-archive-keyring.gpg"
+          ar x devuan-keyring_2026.01.13_all.deb data.tar.xz
+          tar -xf data.tar.xz ./usr/share/keyrings/devuan-archive-keyring.gpg --strip-components=4
+          KEYRING_PATH="$(pwd)/devuan-archive-keyring.gpg"
           cd ..
-          mmdebstrap \
+
+          # 2. 构建基础系统 (使用 sudo 并显式指定 mode 为 rootless)
+          # 使用 sudo 可以解决一切 Permission denied 问题
+          sudo mmdebstrap \
+            --mode=rootless \
             --architectures=${{ matrix.arch }} \
             --variant=minbase \
             --keyring="$KEYRING_PATH" \
@@ -43,9 +48,14 @@ jobs:
             stable \
             "$ROOTFS_DIR" \
             "http://deb.devuan.org/merged"
-          sudo bash -c "
+
+          # 3. 后期配置
+          sudo bash -ec "
             echo 'localhost' > '$ROOTFS_DIR/etc/hostname'
             echo 'proc /proc proc defaults 0 0' > '$ROOTFS_DIR/etc/fstab'
+            
+            # 使用 chroot 配置用户
+            # 确保使用绝对路径 /bin/sh 或 /bin/bash
             chroot '$ROOTFS_DIR' /bin/bash -c \"
               echo 'root:debian123' | chpasswd
               useradd -m -s /bin/bash user
@@ -54,11 +64,15 @@ jobs:
               echo 'user ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/user
               chmod 0440 /etc/sudoers.d/user
             \"
+
+            # 配置 Chrony
             if [ -f '$ROOTFS_DIR/etc/chrony/chrony.conf' ]; then
               sed -i '/^[[:space:]]*pool/s/^/#/' '$ROOTFS_DIR/etc/chrony/chrony.conf'
               sed -i '/^[[:space:]]*server/s/^/#/' '$ROOTFS_DIR/etc/chrony/chrony.conf'
               echo 'server ntp.tencent.com iburst' >> '$ROOTFS_DIR/etc/chrony/chrony.conf'
             fi
+
+            # 清理
             rm -rf '$ROOTFS_DIR'/var/log/*
             rm -rf '$ROOTFS_DIR'/tmp/*
             rm -rf '$ROOTFS_DIR'/usr/share/doc/*
@@ -109,7 +123,7 @@ jobs:
           tag_name: ${{ steps.tag.outputs.RELEASE_TAG }}
           name: Devuan ARM RootFS ${{ steps.tag.outputs.RELEASE_TAG }}
           body: |
-            自动生成的 Devuan 5 (daedalus) ARM RootFS
+            自动生成的 Devuan ARM RootFS
 
             默认账号：
             root / debian123
