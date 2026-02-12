@@ -42,9 +42,9 @@ jobs:
           ls -l "$ABS_KEYRING"
 
           # 2. 构建基础系统
-          # 使用 sudo + rootless 模式解决权限和挂载问题
+          # 使用 sudo 模式解决权限和挂载问题
           sudo mmdebstrap \
-            --mode=rootless \
+            --mode=unshare \
             --architectures=${{ matrix.arch }} \
             --variant=minbase \
             --keyring="$ABS_KEYRING" \
