@@ -36,7 +36,8 @@ jobs:
           mkdir -p "$ROOTFS_DIR"
           sudo debootstrap --verbose --arch=${{ matrix.arch }} --foreign --no-check-gpg stable "$ROOTFS_DIR" http://deb.devuan.org/merged
           echo -e "nameserver 8.8.8.8\nnameserver 8.8.4.4" | sudo tee "$ROOTFS_DIR/etc/resolv.conf"
-          echo "deb http://mirrors.tuna.tsinghua.edu.cn/devuan/merged stable main" | sudo tee "$ROOTFS_DIR/etc/apt/sources.list"
+          echo -e "#!/bin/sh\nexit 101" | sudo tee "$ROOTFS_DIR/usr/sbin/policy-rc.d"
+          sudo chmod +x "$ROOTFS_DIR/usr/sbin/policy-rc.d"
 
       - name: 4. Run Stage 2 inside chroot (via QEMU) & Configure System
         env:
@@ -49,6 +50,7 @@ jobs:
           sudo mount --make-rslave "$ROOTFS_DIR/sys"
           sudo mount --rbind /dev "$ROOTFS_DIR/dev"
           sudo mount --make-rslave "$ROOTFS_DIR/dev"
+          sudo mount -t devpts devpts "$ROOTFS_DIR/dev/pts"
           sudo chroot "$ROOTFS_DIR" /debootstrap/debootstrap --second-stage
           sudo chroot "$ROOTFS_DIR" sh -c 'echo "root:debian123" | chpasswd'
           sudo chroot "$ROOTFS_DIR" /bin/bash -c '
@@ -84,11 +86,12 @@ jobs:
             apt-get clean
             rm -rf /var/log/* /tmp/* /usr/share/doc/* /usr/share/man/* /usr/share/info/* /var/lib/apt/lists/*
           '
+          echo "deb http://mirrors.tuna.tsinghua.edu.cn/devuan/merged stable main" | sudo tee "$ROOTFS_DIR/etc/apt/sources.list"
           sudo chroot "$ROOTFS_DIR" sync
           sudo umount -lf "$ROOTFS_DIR/proc" || true
           sudo umount -lf "$ROOTFS_DIR/sys" || true
           sudo umount -lf "$ROOTFS_DIR/dev" || true
-          sudo rm -f "$ROOTFS_DIR/usr/bin/${{ matrix.qemu_binary }}"
+          sudo rm -f "$ROOTFS_DIR/usr/bin/${{ matrix.qemu_binary }}" "$ROOTFS_DIR/usr/sbin/policy-rc.d"
 
       - name: 5. Compress rootfs archives
         id: gzip
