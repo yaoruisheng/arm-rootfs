@@ -27,17 +27,16 @@ jobs:
       - name: 3. Build Devuan RootFS with mmdebstrap
         env:
           ROOTFS_DIR: ${{ github.workspace }}/devuan_${{ matrix.arch }}
-          WORK_DIR: ${{ github.workspace }}
         run: |
           # 1. 准备 Keyring (使用绝对路径)
-          mkdir -p "$WORK_DIR/keyring_tmp"
-          cd "$WORK_DIR/keyring_tmp"
+          mkdir -p "${{ github.workspace }}/keyring_tmp"
+          cd "${{ github.workspace }}/keyring_tmp"
           wget -q http://deb.devuan.org/merged/pool/DEVUAN/main/d/devuan-keyring/devuan-keyring_2026.01.13_all.deb
           ar x devuan-keyring_2026.01.13_all.deb data.tar.xz
-          tar -xf data.tar.xz ./usr/share/keyrings/devuan-archive-keyring.gpg --strip-components=4
+          tar -xf data.tar.xz
           
           # 定义绝对路径变量
-          ABS_KEYRING="$WORK_DIR/keyring_tmp/devuan-archive-keyring.gpg"
+          ABS_KEYRING="$WORK_DIR/keyring_tmp/usr/share/keyrings/devuan-archive-keyring.gpg"
           
           # 检查文件是否存在 (调试用)
           ls -l "$ABS_KEYRING"
