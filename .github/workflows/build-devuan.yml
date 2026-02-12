@@ -36,7 +36,7 @@ jobs:
           sudo mkdir -p "$ROOTFS_DIR/etc/apt/trusted.gpg.d/"
           sudo cp etc/apt/trusted.gpg.d/* "$ROOTFS_DIR/etc/apt/trusted.gpg.d/"
           cd ..
-          sudo mmdebstrap --mode=unshare --architectures=${{ matrix.arch }} --variant=minbase --include=locales,tzdata,chrony,dropbear,sudo stable "$ROOTFS_DIR" http://deb.devuan.org/merged
+          sudo mmdebstrap --mode=unshare --architectures=${{ matrix.arch }} --allow-non-empty --variant=minbase --include=locales,tzdata,chrony,dropbear,sudo stable "$ROOTFS_DIR" http://deb.devuan.org/merged
           echo "localhost" | sudo tee "$ROOTFS_DIR/etc/hostname"
           echo "proc /proc proc defaults 0 0" | sudo tee "$ROOTFS_DIR/etc/fstab"
           echo "root:debian123" | sudo chroot "$ROOTFS_DIR" chpasswd
