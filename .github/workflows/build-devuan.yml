@@ -1,4 +1,4 @@
-name: Build Devuan Root Filesystems
+name: Build Devuan Root Filesystems (mmdebstrap)
 
 on:
   workflow_dispatch:
@@ -12,64 +12,108 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: arm64
-            qemu_binary: qemu-aarch64-static
-          - arch: armhf
-            qemu_binary: qemu-arm-static
-          - arch: armel
-            qemu_binary: qemu-arm-static
+        arch: [arm64, armhf, armel]
 
     steps:
-      - name: Checkout repository
+      - name: 1. Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: 2. Install mmdebstrap
         run: |
           sudo apt-get update
-          sudo apt-get install -y mmdebstrap qemu-user-static tar wget e2fsprogs
+          sudo apt-get install -y mmdebstrap tar xz-utils qemu-user-static binfmt-support
+          sudo update-binfmts --enable
 
-      - name: Download Devuan keyring
+      - name: 3. Build Devuan RootFS with mmdebstrap
+        env:
+          ROOTFS_DIR: ${{ github.workspace }}/devuan_${{ matrix.arch }}
         run: |
           mkdir -p keyring_tmp
           cd keyring_tmp
           wget -q http://deb.devuan.org/merged/pool/DEVUAN/main/d/devuan-keyring/devuan-keyring_2026.01.13_all.deb
           ar x devuan-keyring_2026.01.13_all.deb
           tar -xf data.tar.xz
+          KEYRING_PATH="$(pwd)/usr/share/keyrings/devuan-archive-keyring.gpg"
           cd ..
+          mmdebstrap \
+            --architectures=${{ matrix.arch }} \
+            --variant=minbase \
+            --keyring="$KEYRING_PATH" \
+            --include=locales,tzdata,chrony,dropbear,sudo \
+            stable \
+            "$ROOTFS_DIR" \
+            "http://deb.devuan.org/merged"
+          sudo bash -c "
+            echo 'localhost' > '$ROOTFS_DIR/etc/hostname'
+            echo 'proc /proc proc defaults 0 0' > '$ROOTFS_DIR/etc/fstab'
+            chroot '$ROOTFS_DIR' /bin/bash -c \"
+              echo 'root:debian123' | chpasswd
+              useradd -m -s /bin/bash user
+              echo 'user:debian123' | chpasswd
+              usermod -aG sudo user
+              echo 'user ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/user
+              chmod 0440 /etc/sudoers.d/user
+            \"
+            if [ -f '$ROOTFS_DIR/etc/chrony/chrony.conf' ]; then
+              sed -i '/^[[:space:]]*pool/s/^/#/' '$ROOTFS_DIR/etc/chrony/chrony.conf'
+              sed -i '/^[[:space:]]*server/s/^/#/' '$ROOTFS_DIR/etc/chrony/chrony.conf'
+              echo 'server ntp.tencent.com iburst' >> '$ROOTFS_DIR/etc/chrony/chrony.conf'
+            fi
+            rm -rf '$ROOTFS_DIR'/var/log/*
+            rm -rf '$ROOTFS_DIR'/tmp/*
+            rm -rf '$ROOTFS_DIR'/usr/share/doc/*
+            rm -rf '$ROOTFS_DIR'/var/lib/apt/lists/*
+          "
 
-      - name: Build rootfs
+      - name: 4. Compress RootFS
+        id: compress
         env:
           ROOTFS_DIR: ${{ github.workspace }}/devuan_${{ matrix.arch }}
         run: |
-          sudo rm -rf "$ROOTFS_DIR"
-          sudo mmdebstrap \
-            --mode=unshare \
-            --architectures=${{ matrix.arch }} \
-            --keyring=$(pwd)/keyring_tmp/etc/apt/trusted.gpg.d/devuan-keyring-2016-archive.asc \
-            --variant=minbase \
-            --include=locales,tzdata,chrony,dropbear,sudo \
-            --setup-hook='
-              echo "localhost" > "$1/etc/hostname";
-              echo "proc /proc proc defaults 0 0" > "$1/etc/fstab";
-              chroot "$1" sh -c "echo root:debian123 | chpasswd";
-              chroot "$1" sh -c "useradd -m -s /bin/bash user; echo user:debian123 | chpasswd; usermod -aG sudo user; echo \"user ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/user; chmod 0440 /etc/sudoers.d/user";
-              sed -i "/^[[:space:]]*pool/s/^/#/" "$1/etc/chrony/chrony.conf";
-              sed -i "/^[[:space:]]*server/s/^/#/" "$1/etc/chrony/chrony.conf";
-              echo "server ntp.tencent.com iburst" >> "$1/etc/chrony/chrony.conf";
-              rm -rf "$1/var/log/*" "$1/tmp/*" "$1/usr/share/doc/*" "$1/usr/share/man/*" "$1/usr/share/info/*" "$1/var/lib/apt/lists/*"
-            ' \
-            stable \
-            "$ROOTFS_DIR" \
-            http://deb.devuan.org/merged
+          ARCHIVE_NAME=devuan-daedalus-${{ matrix.arch }}.tar.xz
+          sudo tar -C "$ROOTFS_DIR" -cJpf "$ARCHIVE_NAME" .
+          echo "TARBALL_NAME=${ARCHIVE_NAME}" >> $GITHUB_OUTPUT
 
-      - name: Compress rootfs
-        run: |
-          cd ${{ github.workspace }}
-          tar czf devuan-rootfs-${{ matrix.arch }}.tar.gz -C $ROOTFS_DIR .
-
-      - name: Upload artifact
+      - name: 5. Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: devuan-rootfs-${{ matrix.arch }}
-          path: devuan-rootfs-${{ matrix.arch }}.tar.gz
+          name: devuan-${{ matrix.arch }}
+          path: ${{ steps.compress.outputs.TARBALL_NAME }}
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build_rootfs
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: ./release
+
+      - name: Flatten artifacts
+        run: |
+          find ./release -name "*.xz" -exec mv {} ./release/ \;
+          find ./release -type d -empty -delete
+          ls -lh ./release
+
+      - name: Generate tag
+        id: tag
+        run: echo "RELEASE_TAG=Devuan_daedalus_$(date +'%Y.%m.%d').${{ github.run_number }}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.tag.outputs.RELEASE_TAG }}
+          name: Devuan ARM RootFS ${{ steps.tag.outputs.RELEASE_TAG }}
+          body: |
+            自动生成的 Devuan 5 (daedalus) ARM RootFS
+
+            默认账号：
+            root / debian123
+            user / debian123
+
+            ⚠ 首次登录请修改密码！
+          files: ./release/*.xz
