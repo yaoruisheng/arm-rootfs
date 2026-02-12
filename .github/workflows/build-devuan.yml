@@ -28,21 +28,13 @@ jobs:
         env:
           ROOTFS_DIR: ${{ github.workspace }}/devuan_${{ matrix.arch }}
         run: |
-          # 1. 准备 Keyring (使用绝对路径)
           mkdir -p "${{ github.workspace }}/keyring_tmp"
           cd "${{ github.workspace }}/keyring_tmp"
           wget -q http://deb.devuan.org/merged/pool/DEVUAN/main/d/devuan-keyring/devuan-keyring_2026.01.13_all.deb
           ar x devuan-keyring_2026.01.13_all.deb data.tar.xz
           tar -xf data.tar.xz
-          
-          # 定义绝对路径变量
           ABS_KEYRING="${{ github.workspace }}/keyring_tmp/usr/share/keyrings/devuan-archive-keyring.gpg"
-          
-          # 检查文件是否存在 (调试用)
           ls -l "$ABS_KEYRING"
-
-          # 2. 构建基础系统
-          # 使用 sudo 模式解决权限和挂载问题
           sudo mmdebstrap \
             --mode=unshare \
             --architectures=${{ matrix.arch }} \
@@ -52,13 +44,9 @@ jobs:
             stable \
             "$ROOTFS_DIR" \
             "http://deb.devuan.org/merged"
-
-          # 3. 后期配置
           sudo bash -ec "
             echo 'localhost' > '$ROOTFS_DIR/etc/hostname'
             echo 'proc /proc proc defaults 0 0' > '$ROOTFS_DIR/etc/fstab'
-            
-            # 配置用户
             chroot '$ROOTFS_DIR' /bin/bash -c \"
               echo 'root:debian123' | chpasswd
               useradd -m -s /bin/bash user
@@ -67,15 +55,11 @@ jobs:
               echo 'user ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/user
               chmod 0440 /etc/sudoers.d/user
             \"
-
-            # 配置 Chrony (如果存在)
             if [ -f '$ROOTFS_DIR/etc/chrony/chrony.conf' ]; then
               sed -i '/^[[:space:]]*pool/s/^/#/' '$ROOTFS_DIR/etc/chrony/chrony.conf'
               sed -i '/^[[:space:]]*server/s/^/#/' '$ROOTFS_DIR/etc/chrony/chrony.conf'
               echo 'server ntp.tencent.com iburst' >> '$ROOTFS_DIR/etc/chrony/chrony.conf'
             fi
-
-            # 清理无用文件减小体积
             rm -rf '$ROOTFS_DIR'/var/log/*
             rm -rf '$ROOTFS_DIR'/tmp/*
             rm -rf '$ROOTFS_DIR'/usr/share/doc/*
@@ -87,7 +71,7 @@ jobs:
         env:
           ROOTFS_DIR: ${{ github.workspace }}/devuan_${{ matrix.arch }}
         run: |
-          ARCHIVE_NAME=devuan-daedalus-${{ matrix.arch }}.tar.xz
+          ARCHIVE_NAME=devuan-${{ matrix.arch }}.tar.xz
           sudo tar -C "$ROOTFS_DIR" -cJpf "$ARCHIVE_NAME" .
           echo "TARBALL_NAME=${ARCHIVE_NAME}" >> $GITHUB_OUTPUT
 
@@ -116,7 +100,7 @@ jobs:
 
       - name: Generate tag
         id: tag
-        run: echo "RELEASE_TAG=Devuan_daedalus_$(date +'%Y.%m.%d').${{ github.run_number }}" >> $GITHUB_OUTPUT
+        run: echo "RELEASE_TAG=Devuan_$(date +'%Y.%m.%d').${{ github.run_number }}" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -126,7 +110,7 @@ jobs:
           tag_name: ${{ steps.tag.outputs.RELEASE_TAG }}
           name: Devuan ARM RootFS ${{ steps.tag.outputs.RELEASE_TAG }}
           body: |
-            自动生成的 Devuan 5 (daedalus) ARM RootFS
+            自动生成的 Devuan ARM RootFS
 
             默认账号：
             root / debian123
