@@ -36,7 +36,7 @@ jobs:
           tar -xf data.tar.xz
           
           # 定义绝对路径变量
-          ABS_KEYRING="$WORK_DIR/keyring_tmp/usr/share/keyrings/devuan-archive-keyring.gpg"
+          ABS_KEYRING="${{ github.workspace }}/keyring_tmp/usr/share/keyrings/devuan-archive-keyring.gpg"
           
           # 检查文件是否存在 (调试用)
           ls -l "$ABS_KEYRING"
