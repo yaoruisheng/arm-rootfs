@@ -21,7 +21,8 @@ jobs:
       - name: 2. Install mmdebstrap
         run: |
           sudo apt-get update
-          sudo apt-get install -y mmdebstrap tar xz-utils
+          sudo apt-get install -y mmdebstrap tar xz-utils qemu-user-static binfmt-support
+          sudo update-binfmts --enable
 
       - name: 3. Build Devuan RootFS with mmdebstrap
         env:
