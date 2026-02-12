@@ -28,7 +28,7 @@ jobs:
         env:
           ROOTFS_DIR: ${{ github.workspace }}/devuan_${{ matrix.arch }}
         run: |
-          sudo mmdebstrap --mode=unshare --architectures=${{ matrix.arch }} --variant=minbase --include=locales,tzdata,chrony,dropbear,sudo stable "$ROOTFS_DIR" http://deb.devuan.org/merged
+          sudo mmdebstrap --mode=unshare --architectures=${{ matrix.arch }} --aptopt='Acquire::AllowInsecureRepositories=true' --variant=minbase --include=locales,tzdata,chrony,dropbear,sudo stable "$ROOTFS_DIR" http://deb.devuan.org/merged
           echo "localhost" | sudo tee "$ROOTFS_DIR/etc/hostname"
           echo "proc /proc proc defaults 0 0" | sudo tee "$ROOTFS_DIR/etc/fstab"
           echo "root:debian123" | sudo chroot "$ROOTFS_DIR" chpasswd
